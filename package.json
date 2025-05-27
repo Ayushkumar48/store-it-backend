@@ -1,19 +1,22 @@
 {
-    "name": "store-it",
-    "scripts": {
-        "db:push": "drizzle-kit push",
-        "dev": "bun run --hot src/index.ts"
-    },
-    "dependencies": {
-        "dotenv": "^16.5.0",
-        "drizzle-orm": "^0.43.1",
-        "hono": "^4.7.10",
-        "pg": "^8.16.0"
-    },
-    "devDependencies": {
-        "@types/bun": "latest",
-        "@types/pg": "^8.15.2",
-        "drizzle-kit": "^0.31.1",
-        "tsx": "^4.19.4"
-    }
+  "name": "store-it",
+  "scripts": {
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "dev": "bun run --hot src/index.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "drizzle-orm": "^0.43.1",
+    "hono": "^4.7.10",
+    "pg": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/pg": "^8.15.2",
+    "drizzle-kit": "^0.31.1",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
 }
