@@ -1,15 +1,15 @@
 import { MiddlewareHandler } from "hono";
 import { checkValidUser } from ".";
+import { getSessionId } from "./helpers";
 
 export const authMiddleware: MiddlewareHandler = async (c, next) => {
-  const authHeader = c.req.header("Authorization");
-  const token = authHeader?.split("Bearer ")[1];
+  const sessionId = getSessionId(c);
 
-  if (!token) {
+  if (!sessionId) {
     return c.json({ message: "Missing token", success: false }, 401);
   }
 
-  const user = await checkValidUser(token);
+  const user = await checkValidUser(sessionId);
 
   if (!user) {
     return c.json({ message: "Invalid or expired token", success: false }, 401);

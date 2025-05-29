@@ -27,7 +27,7 @@ app.post("/validate", async (c) => {
 });
 
 app.route("/auth", auth);
-app.route("/protected", protectedRoutes);
+app.route("/", protectedRoutes);
 
 app.get("/", async (c) => {
   return c.text("hello");
