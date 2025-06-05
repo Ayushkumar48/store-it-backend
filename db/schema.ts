@@ -27,6 +27,7 @@ export const medias = pgTable("medias", {
     .default(sql`gen_random_uuid()`),
   mediaType: mediaTypeEnum().notNull(),
   cloudUrl: text("cloud_url").notNull(),
+  cloudfrontUrl: text("cloudfront_url").notNull(),
   userId: text("user_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

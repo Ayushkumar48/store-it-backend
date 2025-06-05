@@ -22,6 +22,46 @@ export async function getNamespace(): Promise<string> {
   return response.value!;
 }
 
+export function convertToCloudFrontUrl(
+  ociUrl: string,
+  cloudfrontDomain: string = process.env.CLOUDFRONT_DOMAIN as string,
+): string {
+  try {
+    const urlParts = ociUrl.split("/o/");
+    if (urlParts.length < 2) {
+      throw new Error("Invalid OCI URL format");
+    }
+
+    const objectName = decodeURIComponent(urlParts[1]);
+    return `https://${cloudfrontDomain}/${objectName}`;
+  } catch (error) {
+    console.error("Error converting to CloudFront URL:", error);
+    return ociUrl;
+  }
+}
+
+export async function createCloudFrontDistributionConfig() {
+  const namespace = await getNamespace();
+  const bucketParResponse = await blobStorage.createPreauthenticatedRequest({
+    namespaceName: namespace,
+    bucketName,
+    createPreauthenticatedRequestDetails: {
+      name: `cloudfront-origin-${Date.now()}`,
+      accessType:
+        models.CreatePreauthenticatedRequestDetails.AccessType.AnyObjectRead,
+      timeExpires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    },
+  });
+
+  const originUrl = `https://objectstorage.${process.env.OCI_REGION}.oraclecloud.com${bucketParResponse.preauthenticatedRequest.accessUri}`;
+
+  return {
+    originDomain: `objectstorage.${process.env.OCI_REGION}.oraclecloud.com`,
+    originPath: bucketParResponse.preauthenticatedRequest.accessUri,
+    fullParUrl: originUrl,
+  };
+}
+
 export async function uploadToOCI(
   file: File,
   bucketName: string,
@@ -34,13 +74,13 @@ export async function uploadToOCI(
       .select({ userId: sessions.userId })
       .from(sessions)
       .where(eq(sessions.id, sessionId));
+
     if (!userId) {
       throw new Error("User Id not found.");
     }
+
     const arrayBuffer = await file.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
-
-    // console.log(`Uploading file: ${objectName}, size: ${file.size} bytes`);
 
     await blobStorage.putObject({
       namespaceName: namespace,
@@ -50,54 +90,85 @@ export async function uploadToOCI(
       contentLength: file.size,
       contentType: file.type || "application/octet-stream",
     });
-    const url = `https://objectstorage.${process.env.OCI_REGION}.oraclecloud.com/n/${namespace}/b/${bucketName}/o/${encodeURIComponent(objectName)}`;
-    // console.log(url);
+
+    const ociUrl = `https://objectstorage.${process.env.OCI_REGION}.oraclecloud.com/n/${namespace}/b/${bucketName}/o/${encodeURIComponent(objectName)}`;
+
+    const cloudfrontUrl = convertToCloudFrontUrl(ociUrl);
+
     const [mediaDbData] = await db
       .insert(medias)
       .values({
         mediaType: file.type.startsWith("image/") ? "image" : "video",
-        cloudUrl: url,
+        cloudUrl: ociUrl,
+        cloudfrontUrl: cloudfrontUrl,
         userId,
       })
       .returning();
-    return mediaDbData;
+
+    return { ...mediaDbData, cloudfrontUrl };
   } catch (error) {
     console.error(`Error uploading file ${objectName}:`, error);
     throw error;
   }
 }
 
+export async function generateCloudFrontUrl(
+  objectName: string,
+): Promise<string> {
+  try {
+    return `https://${process.env.CLOUDFRONT_DOMAIN as string}/${encodeURIComponent(objectName)}`;
+  } catch (error) {
+    console.error("Error generating CloudFront URL:", error);
+    throw error;
+  }
+}
+
 export async function generatePresignedUrl(
   objectName: string,
-  expirationMinutes: number = 60,
+  expirationMinutes: number = 60 * 24 * 365,
 ): Promise<string> {
   try {
     const namespace = await getNamespace();
 
-    // Create the pre-authenticated request
+    const listParResponse = await blobStorage.listPreauthenticatedRequests({
+      namespaceName: namespace,
+      bucketName,
+    });
+    const existingPar = listParResponse.items.find(
+      (item) =>
+        item.objectName === objectName &&
+        item.accessType === "ObjectRead" &&
+        new Date(item.timeExpires) > new Date(),
+    );
+
+    if (existingPar) {
+      const parDetails = await blobStorage.getPreauthenticatedRequest({
+        namespaceName: namespace,
+        bucketName,
+        parId: existingPar.id,
+      });
+
+      return `https://objectstorage.${process.env.OCI_REGION}.oraclecloud.com${parDetails.preauthenticatedRequestSummary.id}`;
+    }
+
     const parResponse = await blobStorage.createPreauthenticatedRequest({
       namespaceName: namespace,
-      bucketName: bucketName,
+      bucketName,
       createPreauthenticatedRequestDetails: {
-        name: `temp-access-${Date.now()}`,
-        objectName: objectName,
+        name: `read-${Date.now()}-${objectName}`,
+        objectName,
         accessType:
           models.CreatePreauthenticatedRequestDetails.AccessType.ObjectRead,
         timeExpires: new Date(Date.now() + expirationMinutes * 60 * 1000),
       },
     });
 
-    const accessUri = parResponse.preauthenticatedRequest.accessUri;
-
-    if (!accessUri) {
+    if (!parResponse.preauthenticatedRequest.accessUri) {
       throw new Error("Missing access URI in preauthenticated response");
     }
-
-    // Final signed URL
-    const finalUrl = `https://objectstorage.${process.env.OCI_REGION}.oraclecloud.com${accessUri}`;
-    return finalUrl;
+    return `https://objectstorage.${process.env.OCI_REGION}.oraclecloud.com${parResponse.preauthenticatedRequest.accessUri}`;
   } catch (error) {
-    console.error("Error generating pre-signed URL:", error);
+    console.error("Error generating/reusing pre-signed URL:", error);
     throw error;
   }
 }
