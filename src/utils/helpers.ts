@@ -4,6 +4,11 @@ import { medias, sessions, users } from "../../db/schema";
 import { models } from "oci-objectstorage";
 import { BlankEnv, BlankInput } from "hono/types";
 import { Context } from "hono";
+import { spawn } from "bun";
+import { writeFile, unlink } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
+import { randomUUIDv7 } from "bun";
 
 export const bucketName = "store-it-bucket";
 
@@ -63,42 +68,41 @@ export async function createCloudFrontDistributionConfig() {
 }
 
 export async function uploadToOCI(
-  file: File,
+  fileBuffer: Buffer,
   bucketName: string,
   objectName: string,
   namespace: string,
   sessionId: string,
+  contentType: string,
+  originalFileName?: string,
 ) {
   try {
     const [{ userId }] = await db
       .select({ userId: sessions.userId })
       .from(sessions)
       .where(eq(sessions.id, sessionId));
-
     if (!userId) {
       throw new Error("User Id not found.");
     }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
+    const uint8Array = new Uint8Array(fileBuffer);
 
     await blobStorage.putObject({
       namespaceName: namespace,
       bucketName,
       objectName,
       putObjectBody: uint8Array,
-      contentLength: file.size,
-      contentType: file.type || "application/octet-stream",
+      contentLength: fileBuffer.length,
+      contentType: contentType || "application/octet-stream",
     });
 
     const ociUrl = `https://objectstorage.${process.env.OCI_REGION}.oraclecloud.com/n/${namespace}/b/${bucketName}/o/${encodeURIComponent(objectName)}`;
-
     const cloudfrontUrl = convertToCloudFrontUrl(ociUrl);
 
     const [mediaDbData] = await db
       .insert(medias)
       .values({
-        mediaType: file.type.startsWith("image/") ? "image" : "video",
+        mediaType: contentType.startsWith("image/") ? "image" : "video",
         cloudUrl: ociUrl,
         cloudfrontUrl: cloudfrontUrl,
         userId,
@@ -107,7 +111,10 @@ export async function uploadToOCI(
 
     return { ...mediaDbData, cloudfrontUrl };
   } catch (error) {
-    console.error(`Error uploading file ${objectName}:`, error);
+    console.error(
+      `Error uploading file ${originalFileName || objectName}:`,
+      error,
+    );
     throw error;
   }
 }
@@ -185,4 +192,66 @@ export async function getUserDataFromSessionId(sessionId: string) {
     console.error(err);
     return null;
   }
+}
+
+export async function convertVideoToWebM(inputBuffer: Buffer): Promise<Buffer> {
+  console.log("converting to webm");
+  const tempInputPath = join(tmpdir(), `${randomUUIDv7()}.mp4`);
+  const tempOutputPath = join(tmpdir(), `${randomUUIDv7()}.webm`);
+
+  await writeFile(tempInputPath, inputBuffer);
+
+  const subprocess = spawn({
+    cmd: [
+      "ffmpeg",
+      "-i",
+      tempInputPath,
+      "-c:v",
+      "libvpx", // VP8 codec (fast WebM)
+      "-quality",
+      "good", // Good quality/speed balance
+      "-cpu-used",
+      "4", // Faster encoding (0-16, higher = faster)
+      "-crf",
+      "25", // Quality level
+      "-b:v",
+      "1.5M", // Target bitrate
+      "-maxrate",
+      "2M", // Max bitrate cap
+      "-bufsize",
+      "4M", // Buffer size
+      "-vf",
+      "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease", // Max 1080p
+      "-c:a",
+      "libvorbis", // Vorbis audio codec
+      "-b:a",
+      "128k", // Audio bitrate
+      "-ac",
+      "2", // Stereo audio
+      "-threads",
+      "0", // Use all available cores
+      "-deadline",
+      "good", // Speed/quality balance
+      "-f",
+      "webm", // WebM format
+      tempOutputPath,
+    ],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const exitCode = await subprocess.exited;
+  const stderrOutput = await new Response(subprocess.stderr).text();
+
+  if (exitCode !== 0) {
+    throw new Error(`FFmpeg failed with code ${exitCode}: ${stderrOutput}`);
+  }
+
+  const outputBuffer = await Bun.file(tempOutputPath).arrayBuffer();
+
+  await unlink(tempInputPath);
+  await unlink(tempOutputPath);
+
+  console.log("successfully converted to webm");
+  return Buffer.from(outputBuffer);
 }

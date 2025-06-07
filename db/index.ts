@@ -6,6 +6,8 @@ import { Region, SimpleAuthenticationDetailsProvider } from "oci-common";
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 10,
+  idleTimeoutMillis: 60000,
+  connectionTimeoutMillis: 5000,
 });
 
 const provider = new SimpleAuthenticationDetailsProvider(

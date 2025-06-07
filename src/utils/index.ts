@@ -34,7 +34,7 @@ export async function checkValidUser(authToken: string) {
       .set({ expiresAt: newExpiresAt })
       .where(eq(sessions.id, authToken));
 
-    return result.user;
+    return { ...result.user, password: null };
   } catch (err) {
     console.error(err);
     return null;

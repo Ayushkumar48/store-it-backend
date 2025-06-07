@@ -44,8 +44,9 @@ app.get("/", async (c) => {
   return c.text("hello");
 });
 
-export default {
-  port: process.env["PORT"] || 3000,
+Bun.serve({
+  port: Number(process.env.PORT) || 3000,
   fetch: app.fetch,
   maxRequestBodySize: 1024 * 1024 * 200,
-};
+  idleTimeout: 60,
+});
