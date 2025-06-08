@@ -35,7 +35,7 @@ jobs:
         uses: denoland/deployctl@v1
         with:
           project: "ayushkumar-store-it-ba-24"
-          entrypoint: "index.ts"
+          entrypoint: "src/index.ts"
           root: ""
           
           
