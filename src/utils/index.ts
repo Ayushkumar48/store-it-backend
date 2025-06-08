@@ -94,3 +94,41 @@ export async function login(username: string, password: string) {
 
   return { success: false, message: "Invalid login details!" };
 }
+
+export async function updateProfile(
+  name: string,
+  password: string,
+  userId: string,
+) {
+  if (!userId) {
+    return {
+      message: "UserId not found!",
+      success: false,
+    };
+  }
+  const [existingUser] = await db
+    .select({ userId: users.id })
+    .from(users)
+    .where(eq(users.id, userId));
+  if (!existingUser.userId) {
+    return {
+      message: "User not found!",
+      success: false,
+    };
+  }
+  if (password && password !== "") {
+    const hash = await Bun.password.hash(password);
+    await db
+      .update(users)
+      .set({ name: name, password: hash })
+      .where(eq(users.id, userId))
+      .returning();
+  } else {
+    await db
+      .update(users)
+      .set({ name: name })
+      .where(eq(users.id, userId))
+      .returning();
+  }
+  return { success: true, message: "Profile updated successfully" };
+}

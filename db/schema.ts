@@ -32,6 +32,17 @@ export const medias = pgTable("medias", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// export const videosThumbnails = pgTable("video_thumbnails", {
+//   id: text()
+//     .primaryKey()
+//     .default(sql`gen_random_uuid()`),
+//   mediaId: text("media_id").references(() => medias.id),
+//   cloudUrl: text("cloud_url").notNull(),
+//   cloudfrontUrl: text("cloudfront_url").notNull(),
+//   userId: text("user_id").references(() => users.id),
+//   createdAt: timestamp("created_at").defaultNow().notNull(),
+// });
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 

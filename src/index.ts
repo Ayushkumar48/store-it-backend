@@ -50,3 +50,5 @@ Bun.serve({
   maxRequestBodySize: 1024 * 1024 * 200,
   idleTimeout: 60,
 });
+
+console.log(`🚀 Server running on http://localhost:${process.env.PORT}`);
